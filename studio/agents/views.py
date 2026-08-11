@@ -1,0 +1,102 @@
+"""Minimal JSON API for the React frontend.
+
+Local-development API (CSRF-exempt JSON endpoints); the admin remains the
+authenticated management surface. In a hardened deployment these would sit
+behind session or token auth.
+"""
+
+from __future__ import annotations
+
+import json
+
+from django.http import HttpRequest, JsonResponse
+from django.shortcuts import get_object_or_404
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+
+from .models import Agent, Document
+from .services import EngineError, push_document
+
+
+def _agent_dict(agent: Agent) -> dict:
+    return {
+        "id": agent.id,
+        "name": agent.name,
+        "slug": agent.slug,
+        "description": agent.description,
+        "system_prompt": agent.system_prompt,
+        "documents": agent.documents.count(),
+    }
+
+
+def _doc_dict(doc: Document) -> dict:
+    return {
+        "id": doc.id,
+        "title": doc.title,
+        "status": doc.status,
+        "last_error": doc.last_error,
+        "created_at": doc.created_at.isoformat(),
+    }
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def agents_view(request: HttpRequest) -> JsonResponse:
+    if request.method == "GET":
+        return JsonResponse(
+            {"agents": [_agent_dict(a) for a in Agent.objects.all()]}
+        )
+
+    body = json.loads(request.body or "{}")
+    name = (body.get("name") or "").strip()
+    if not name:
+        return JsonResponse({"error": "name is required"}, status=400)
+    if Agent.objects.filter(name__iexact=name).exists():
+        return JsonResponse({"error": "agent already exists"}, status=409)
+
+    agent = Agent.objects.create(
+        name=name,
+        description=(body.get("description") or "").strip(),
+        system_prompt=(body.get("system_prompt") or "").strip(),
+    )
+    return JsonResponse(_agent_dict(agent), status=201)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def documents_view(request: HttpRequest, slug: str) -> JsonResponse:
+    agent = get_object_or_404(Agent, slug=slug)
+
+    if request.method == "GET":
+        return JsonResponse(
+            {
+                "agent": agent.slug,
+                "documents": [_doc_dict(d) for d in agent.documents.all()],
+            }
+        )
+
+    body = json.loads(request.body or "{}")
+    title = (body.get("title") or "").strip()
+    text = (body.get("text") or "").strip()
+    if not title or not text:
+        return JsonResponse({"error": "title and text are required"}, status=400)
+
+    doc, _created = Document.objects.update_or_create(
+        agent=agent, title=title, defaults={"text": text}
+    )
+    try:
+        push_document(doc)
+    except EngineError:
+        pass  # status/last_error already recorded on the document
+    return JsonResponse(_doc_dict(doc), status=201)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def reindex_view(request: HttpRequest, slug: str, doc_id: int) -> JsonResponse:
+    doc = get_object_or_404(Document, id=doc_id, agent__slug=slug)
+    try:
+        result = push_document(doc)
+    except EngineError as exc:
+        return JsonResponse({"error": str(exc)}, status=502)
+    return JsonResponse({"document": _doc_dict(doc), "engine": result})
