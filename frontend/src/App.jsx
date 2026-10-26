@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { chat, createAgent, listAgents, uploadDocument } from "./api";
+import { chat, createAgent, deleteAgent, listAgents, uploadDocument } from "./api";
 
 export default function App() {
   const [agents, setAgents] = useState([]);
@@ -50,6 +50,18 @@ export default function App() {
           ? ""
           : `Document saved but not indexed (${doc.last_error || doc.status}) — is the engine running?`
       );
+      await refresh();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const onDeleteAgent = async () => {
+    if (!selected || !window.confirm(`Delete agent "${selected}" and its index?`)) return;
+    try {
+      await deleteAgent(selected);
+      setSelected(null);
+      setMessages([]);
       await refresh();
     } catch (err) {
       setError(err.message);
@@ -117,6 +129,9 @@ export default function App() {
             <input name="title" placeholder="Document title" required />
             <textarea name="text" placeholder="Paste text…" rows={5} required />
             <button type="submit">Ingest</button>
+            <button type="button" className="danger" onClick={onDeleteAgent}>
+              Delete agent
+            </button>
           </form>
         )}
       </aside>
