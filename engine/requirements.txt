@@ -1,6 +1,5 @@
-fastapi>=0.110
-uvicorn[standard]>=0.29
-chromadb>=0.5
-httpx>=0.27
-pydantic>=2.6
-pytest>=8.0
+fastapi>=0.110,<1
+uvicorn[standard]>=0.29,<1
+chromadb>=0.5,<2
+httpx>=0.27,<1
+pydantic>=2.6,<3

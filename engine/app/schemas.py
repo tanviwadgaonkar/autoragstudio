@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class DocumentIn(BaseModel):
@@ -14,6 +14,16 @@ class IngestRequest(BaseModel):
     documents: list[DocumentIn] = Field(min_length=1)
     system_prompt: str | None = None
     reset: bool = False
+
+    @field_validator("documents")
+    @classmethod
+    def titles_are_unique(cls, docs: list[DocumentIn]) -> list[DocumentIn]:
+        # A title identifies a document inside an agent (re-ingest replaces it),
+        # so two documents with one title in a single request is ambiguous.
+        titles = [d.title for d in docs]
+        if len(titles) != len(set(titles)):
+            raise ValueError("document titles must be unique within a request")
+        return docs
 
 
 class IngestResponse(BaseModel):
