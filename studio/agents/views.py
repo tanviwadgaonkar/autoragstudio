@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 
+from django.db.models import Count
 from django.http import HttpRequest, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
@@ -18,6 +19,15 @@ from .models import Agent, Document
 from .services import EngineError, push_document
 
 
+def _json_body(request: HttpRequest) -> dict | None:
+    """Parsed JSON object body, or None if the body is not a JSON object."""
+    try:
+        body = json.loads(request.body or "{}")
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    return body if isinstance(body, dict) else None
+
+
 def _agent_dict(agent: Agent) -> dict:
     return {
         "id": agent.id,
@@ -25,7 +35,7 @@ def _agent_dict(agent: Agent) -> dict:
         "slug": agent.slug,
         "description": agent.description,
         "system_prompt": agent.system_prompt,
-        "documents": agent.documents.count(),
+        "documents": agent.doc_count if hasattr(agent, "doc_count") else agent.documents.count(),
     }
 
 
@@ -43,11 +53,12 @@ def _doc_dict(doc: Document) -> dict:
 @require_http_methods(["GET", "POST"])
 def agents_view(request: HttpRequest) -> JsonResponse:
     if request.method == "GET":
-        return JsonResponse(
-            {"agents": [_agent_dict(a) for a in Agent.objects.all()]}
-        )
+        agents = Agent.objects.annotate(doc_count=Count("documents"))
+        return JsonResponse({"agents": [_agent_dict(a) for a in agents]})
 
-    body = json.loads(request.body or "{}")
+    body = _json_body(request)
+    if body is None:
+        return JsonResponse({"error": "body must be a JSON object"}, status=400)
     name = (body.get("name") or "").strip()
     if not name:
         return JsonResponse({"error": "name is required"}, status=400)
@@ -75,7 +86,9 @@ def documents_view(request: HttpRequest, slug: str) -> JsonResponse:
             }
         )
 
-    body = json.loads(request.body or "{}")
+    body = _json_body(request)
+    if body is None:
+        return JsonResponse({"error": "body must be a JSON object"}, status=400)
     title = (body.get("title") or "").strip()
     text = (body.get("text") or "").strip()
     if not title or not text:
@@ -100,3 +113,11 @@ def reindex_view(request: HttpRequest, slug: str, doc_id: int) -> JsonResponse:
     except EngineError as exc:
         return JsonResponse({"error": str(exc)}, status=502)
     return JsonResponse({"document": _doc_dict(doc), "engine": result})
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def agent_detail_view(request: HttpRequest, slug: str) -> JsonResponse:
+    agent = get_object_or_404(Agent, slug=slug)
+    agent.delete()  # post_delete signal drops the engine index
+    return JsonResponse({"deleted": slug})

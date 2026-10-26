@@ -8,12 +8,16 @@ Indexing and chat are delegated to the FastAPI engine over HTTP
 from pathlib import Path
 import os
 
+from django.core.exceptions import ImproperlyConfigured
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.environ.get(
-    "DJANGO_SECRET_KEY", "dev-only-key-change-me-in-production"
-)
+_DEV_SECRET = "dev-only-key-change-me-in-production"
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", _DEV_SECRET)
 DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
+if not DEBUG and SECRET_KEY == _DEV_SECRET:
+    # Fail fast instead of running a non-debug deployment on a public key.
+    raise ImproperlyConfigured("Set DJANGO_SECRET_KEY when DJANGO_DEBUG=0")
 ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
 if DEBUG:
     ALLOWED_HOSTS.append("testserver")
