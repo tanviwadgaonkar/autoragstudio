@@ -137,7 +137,7 @@ frontend/  React (Vite) UI: agent sidebar, document ingest, chat with sources
 
 ## Known limitations
 
-- On some Windows builds ChromaDB's native bindings crash on the first write (seen with chromadb 1.0–1.5 on Windows 10 build 21996; 0.5/0.6 need MSVC build tools there). `RAG_STORE=memory` runs everything without Chroma; CI on Linux exercises the Chroma backend.
+- **Windows:** ChromaDB's native core needs a current Microsoft Visual C++ 2015–2022 Redistributable. With only the original 2015 runtime installed, `chromadb` 1.x crashes with an access violation on the first write. Install the redistributable, or use `RAG_STORE=memory`, which needs no native code.
 - Ollama embeddings are requested one text at a time.
 - No authentication (see *Security model*).
 
