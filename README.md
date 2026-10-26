@@ -1,5 +1,7 @@
 # AutoRAG Studio
 
+[![CI](https://github.com/tanviwadgaonkar/autoragstudio/actions/workflows/ci.yml/badge.svg)](https://github.com/tanviwadgaonkar/autoragstudio/actions/workflows/ci.yml)
+
 A multi-agent RAG platform that runs entirely on your machine. Create agents, give each one its own documents, and chat with them — every agent retrieves only from its own isolated ChromaDB vector store, and generation runs on locally hosted LLMs through [Ollama](https://ollama.com). The chunking → embedding → retrieval pipeline is written from scratch (no LangChain), so every step is inspectable and testable.
 
 ## Architecture
@@ -21,7 +23,25 @@ A multi-agent RAG platform that runs entirely on your machine. Create agents, gi
                      per agent)         chat model)
 ```
 
-The two services share nothing but the **agent slug** — the Engine keys its Chroma collections by it. That gives the platform its core guarantee: **per-agent isolation**. Agent A can never retrieve agent B's documents; the test suite proves it at both the store layer and through the HTTP API.
+The two services share nothing but the **agent slug** — the Engine keys its Chroma collections by it. That gives the platform its core guarantee: **per-agent isolation**. Agent A can never retrieve agent B's documents; the test suite proves it at the naming layer, the store layer and through the HTTP API.
+
+### Lifecycle of a document
+
+```
+Studio: POST /api/agents/{slug}/documents/   (create or update by title)
+   │  saves row (status=pending)
+   ▼
+Engine: POST /agents/{slug}/ingest
+   1. chunk  (120-word windows, 24-word overlap)
+   2. embed  (Ollama; if this fails nothing below runs → old version stays intact)
+   3. delete this title's previous chunks   (an edit never leaves stale chunks)
+   4. upsert new chunks into collection agent--{slug}
+   │
+   ▼
+Studio: status=indexed  (or failed + last_error, visible in UI and admin)
+
+Studio: DELETE /api/agents/{slug}/  →  post_delete signal → Engine DELETE /agents/{slug}/index
+```
 
 ## Quickstart
 
@@ -37,6 +57,9 @@ uvicorn app.main:app --port 8001 --reload
 
 # or fully offline (no models; hashing embedder + echo LLM):
 RAG_EMBEDDER=hash RAG_LLM=echo uvicorn app.main:app --port 8001
+
+# no ChromaDB at all (in-process vector store, nothing persisted):
+RAG_STORE=memory RAG_EMBEDDER=hash RAG_LLM=echo uvicorn app.main:app --port 8001
 ```
 
 ### 2. Studio (Django)
@@ -63,10 +86,15 @@ Create an agent in the sidebar, paste a document, and ask it a question — the 
 
 ```bash
 cd engine
-pytest -q          # 22 passed
+pip install -r requirements-dev.txt
+pytest -q                      # 40 tests against in-memory ChromaDB
+RAG_STORE=memory pytest -q     # same 40 tests against the dependency-free store
+
+cd ../studio
+python manage.py test          # 9 Django tests (engine calls mocked)
 ```
 
-The 22-test suite covers **ingestion** (chunk sizing, overlap, deterministic ids; embedding dimensionality and determinism), **retrieval** (per-agent isolation, ranking, top-k, metadata round-trips), and **API behaviour** (ingest/chat/stats endpoints, 404 on unknown agents, 422 validation, isolation through HTTP). Tests run fully offline in under a second: a deterministic hashing embedder and an echo LLM stand in for Ollama, and Chroma runs in-memory — the same interfaces, no network.
+The engine suite covers **ingestion** (chunk sizing, overlap, deterministic and collision-free ids; embedding dimensionality and determinism), **re-indexing** (an edited document replaces its old chunks; a failed embedding leaves the previous version intact), **isolation** (collection naming is injective and always a valid Chroma name; agents never see each other's chunks), **persistence** (system prompts survive a restart), and **API behaviour** (404 unknown agent, 422 validation, 503 when the model backend is down). The Studio suite covers slug generation (non-Latin names, colliding names), malformed JSON, indexing status, and index cleanup on agent delete. Everything runs offline: a hashing embedder and an echo LLM stand in for Ollama. CI runs the engine suite against both store backends, the Studio suite, and a frontend build.
 
 ## Engine API
 
@@ -77,7 +105,7 @@ The 22-test suite covers **ingestion** (chunk sizing, overlap, deterministic ids
 | POST   | `/agents/{id}/query`        | Retrieval only — for debugging retrieval |
 | POST   | `/agents/{id}/chat`         | Retrieve + generate; answer with sources |
 | GET    | `/agents/{id}/stats`        | Indexed chunk count                      |
-| DELETE | `/agents/{id}/index`        | Drop the agent's index                   |
+| DELETE | `/agents/{id}/index`        | Drop the agent's index (and its prompt)  |
 
 Interactive docs at `http://localhost:8001/docs`.
 
@@ -89,15 +117,29 @@ Interactive docs at `http://localhost:8001/docs`.
 
 **Why offline test doubles?** CI should not depend on a 4 GB model download. The hashing embedder is deterministic bag-of-words — crude, but word overlap still produces meaningful cosine ordering, which is exactly enough to test the pipeline's plumbing end to end.
 
-**Environment variables** (engine): `RAG_EMBEDDER` = `ollama` | `hash` · `RAG_LLM` = `ollama` | `echo` · `RAG_CHROMA` = `persistent` | `ephemeral` · `RAG_CHROMA_DIR` · `OLLAMA_URL` · `OLLAMA_EMBED_MODEL` · `OLLAMA_CHAT_MODEL`. Studio: `ENGINE_URL`, `DJANGO_SECRET_KEY`, `DJANGO_DEBUG`.
+**Why can't two agents share a collection?** Chroma collection names are capped at 63 characters. Slugs that fit keep the readable `agent--<slug>` name; anything longer (or not already a clean slug) becomes a truncated prefix plus a SHA-256 prefix of the full id, separated by a `.` — a character slugs never contain — so the mapping is injective. Before this, two long agent names that shared their first 56 characters silently shared one index.
+
+**Why delete-then-upsert on re-ingest?** Chunk ids are `<title-slug>-<title-hash>::chunk-N`. Upserting a shorter edit would overwrite chunks 0..k and leave k+1..n from the old version retrievable. The engine embeds first, then deletes the title's old chunks, then writes — so an embedding failure never loses the previous version.
+
+**Where do system prompts live?** Next to the vector index (`<RAG_CHROMA_DIR>/system_prompts.json`, written atomically), because a restarted engine with a persistent index but an in-memory prompt would quietly answer with the default persona.
+
+**Security model.** This is a local, single-user tool: the Studio JSON API is CSRF-exempt and neither service has authentication. Don't expose them to a network as-is. `DJANGO_DEBUG=0` refuses to start without a real `DJANGO_SECRET_KEY`.
+
+**Environment variables** (engine): `RAG_STORE` = `chroma` | `memory` · `RAG_EMBEDDER` = `ollama` | `hash` · `RAG_LLM` = `ollama` | `echo` · `RAG_CHROMA` = `persistent` | `ephemeral` · `RAG_CHROMA_DIR` · `OLLAMA_URL` · `OLLAMA_EMBED_MODEL` · `OLLAMA_CHAT_MODEL`. Studio: `ENGINE_URL`, `DJANGO_SECRET_KEY`, `DJANGO_DEBUG`.
 
 ## Project structure
 
 ```
-engine/    FastAPI service + the RAG core (app/rag: chunker, embeddings, store, llm, pipeline) + 22 tests
-studio/    Django backend: agent registry, document store, admin, JSON API
+engine/    FastAPI service + the RAG core (app/rag: chunker, embeddings, store, llm, pipeline) + 40 tests
+studio/    Django backend: agent registry, document store, admin, JSON API + 9 tests
 frontend/  React (Vite) UI: agent sidebar, document ingest, chat with sources
 ```
+
+## Known limitations
+
+- On some Windows builds ChromaDB's native bindings crash on the first write (seen with chromadb 1.0–1.5 on Windows 10 build 21996; 0.5/0.6 need MSVC build tools there). `RAG_STORE=memory` runs everything without Chroma; CI on Linux exercises the Chroma backend.
+- Ollama embeddings are requested one text at a time.
+- No authentication (see *Security model*).
 
 ## Roadmap
 
