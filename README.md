@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/tanviwadgaonkar/autoragstudio/actions/workflows/ci.yml/badge.svg)](https://github.com/tanviwadgaonkar/autoragstudio/actions/workflows/ci.yml)
 
+**Status:** implemented and tested **with mocks**: 45 engine tests and 11 Studio tests use a hashing embedder and an echo LLM instead of real models. CI also runs the engine suite against a real ChromaDB. One manual end-to-end run with a real `llama3.2:1b` is shown below. There is no retrieval-quality evaluation yet. Not deployed.
+
 A multi-agent RAG platform that runs entirely on your machine. Create agents, give each one its own documents, and chat with them — every agent retrieves only from its own isolated ChromaDB vector store, and generation runs on locally hosted LLMs through [Ollama](https://ollama.com). The chunking → embedding → retrieval pipeline is written from scratch (no LangChain), so every step is inspectable and testable.
 
 ![AutoRAG Studio: an agent answering from its own document, with the retrieved source and similarity score](docs/screenshot-chat.png)
