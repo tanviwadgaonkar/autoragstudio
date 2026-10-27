@@ -3,11 +3,19 @@
 Local-development API (CSRF-exempt JSON endpoints); the admin remains the
 authenticated management surface. In a hardened deployment these would sit
 behind session or token auth.
+
+CSRF: the endpoints are exempt from Django's token check, so a page on another
+site could otherwise POST to a Studio running on localhost with a "simple"
+request (e.g. Content-Type: text/plain), which browsers send without a CORS
+preflight. Requiring Content-Type: application/json forces a preflight that
+this server never approves, so cross-site writes are blocked; DELETE always
+needs a preflight.
 """
 
 from __future__ import annotations
 
 import json
+from functools import wraps
 
 from django.db.models import Count
 from django.http import HttpRequest, JsonResponse
@@ -17,6 +25,16 @@ from django.views.decorators.http import require_http_methods
 
 from .models import Agent, Document
 from .services import EngineError, push_document
+
+
+def json_posts_only(view):
+    """Reject POSTs that are not application/json (see module docstring: CSRF)."""
+    @wraps(view)
+    def wrapper(request: HttpRequest, *args, **kwargs):
+        if request.method == "POST" and request.content_type != "application/json":
+            return JsonResponse({"error": "Content-Type must be application/json"}, status=415)
+        return view(request, *args, **kwargs)
+    return wrapper
 
 
 def _json_body(request: HttpRequest) -> dict | None:
@@ -51,6 +69,7 @@ def _doc_dict(doc: Document) -> dict:
 
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
+@json_posts_only
 def agents_view(request: HttpRequest) -> JsonResponse:
     if request.method == "GET":
         agents = Agent.objects.annotate(doc_count=Count("documents"))
@@ -75,6 +94,7 @@ def agents_view(request: HttpRequest) -> JsonResponse:
 
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
+@json_posts_only
 def documents_view(request: HttpRequest, slug: str) -> JsonResponse:
     agent = get_object_or_404(Agent, slug=slug)
 
@@ -106,6 +126,7 @@ def documents_view(request: HttpRequest, slug: str) -> JsonResponse:
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@json_posts_only
 def reindex_view(request: HttpRequest, slug: str, doc_id: int) -> JsonResponse:
     doc = get_object_or_404(Document, id=doc_id, agent__slug=slug)
     try:

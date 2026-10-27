@@ -91,8 +91,8 @@ Create an agent in the sidebar, paste a document, and ask it a question — the 
 ```bash
 cd engine
 pip install -r requirements-dev.txt
-pytest -q                      # 44 tests against in-memory ChromaDB
-RAG_STORE=memory pytest -q     # same 44 tests against the dependency-free store
+pytest -q                      # 45 tests against in-memory ChromaDB
+RAG_STORE=memory pytest -q     # same 45 tests against the dependency-free store
 
 cd ../studio
 python manage.py test          # 9 Django tests (engine calls mocked)
@@ -127,15 +127,15 @@ Interactive docs at `http://localhost:8001/docs`.
 
 **Where do system prompts live?** Next to the vector index (`<RAG_CHROMA_DIR>/system_prompts.json`, written atomically), because a restarted engine with a persistent index but an in-memory prompt would quietly answer with the default persona.
 
-**Security model.** This is a local, single-user tool: the Studio JSON API is CSRF-exempt and neither service has authentication. Don't expose them to a network as-is. `DJANGO_DEBUG=0` refuses to start without a real `DJANGO_SECRET_KEY`.
+**Security model.** This is a local, single-user tool, and neither service has authentication. Don't expose them to a network as-is. The Studio JSON API skips Django's CSRF token, so to stop other websites from writing to a Studio on `localhost` it only accepts `application/json` POSTs: browsers must send a CORS preflight for those, and the server never approves one. Request sizes are bounded: 500k characters per document, 200 documents per ingest, 2,000-character questions. `DJANGO_DEBUG=0` refuses to start without a real `DJANGO_SECRET_KEY`.
 
 **Environment variables** (engine): `RAG_STORE` = `chroma` | `memory` · `RAG_EMBEDDER` = `ollama` | `hash` · `RAG_LLM` = `ollama` | `echo` · `RAG_CHROMA` = `persistent` | `ephemeral` · `RAG_CHROMA_DIR` · `OLLAMA_URL` · `OLLAMA_EMBED_MODEL` · `OLLAMA_CHAT_MODEL` · `OLLAMA_CHAT_TIMEOUT` (s, default 120) · `OLLAMA_EMBED_TIMEOUT` (s, default 60). Studio: `ENGINE_URL`, `DJANGO_SECRET_KEY`, `DJANGO_DEBUG`.
 
 ## Project structure
 
 ```
-engine/    FastAPI service + the RAG core (app/rag: chunker, embeddings, store, llm, pipeline) + 44 tests
-studio/    Django backend: agent registry, document store, admin, JSON API + 9 tests
+engine/    FastAPI service + the RAG core (app/rag: chunker, embeddings, store, llm, pipeline) + 45 tests
+studio/    Django backend: agent registry, document store, admin, JSON API + 11 tests
 frontend/  React (Vite) UI: agent sidebar, document ingest, chat with sources
 ```
 

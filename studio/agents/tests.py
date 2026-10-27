@@ -95,3 +95,17 @@ class DocumentIndexingTests(TestCase):
         with self.assertLogs("agents.signals", level="WARNING"):
             self.assertEqual(self.client.delete("/api/agents/docs-bot/").status_code, 200)
         self.assertFalse(Agent.objects.exists())
+
+
+class CrossSiteRequestTests(TestCase):
+    """CSRF-exempt endpoints must not accept the "simple" requests a foreign page can send without a preflight."""
+
+    def test_text_plain_post_is_rejected(self):
+        resp = self.client.post("/api/agents/", data='{"name": "Evil"}', content_type="text/plain")
+        self.assertEqual(resp.status_code, 415)
+        self.assertFalse(Agent.objects.exists())
+
+    def test_form_post_is_rejected(self):
+        resp = self.client.post("/api/agents/", data={"name": "Evil"})  # multipart form
+        self.assertEqual(resp.status_code, 415)
+        self.assertFalse(Agent.objects.exists())

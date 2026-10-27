@@ -93,3 +93,10 @@ def test_delete_index_then_query_is_404(client, agent_id):
     _ingest(client, agent_id, [CAT_DOC])
     assert client.delete(f"/agents/{agent_id}/index").json()["deleted"] is True
     assert client.post(f"/agents/{agent_id}/query", json={"question": "cats"}).status_code == 404
+
+
+def test_oversized_inputs_are_rejected(client):
+    too_long = "x" * 2_001
+    assert client.post("/agents/a1/query", json={"question": too_long}).status_code == 422
+    docs = [{"title": f"t{i}", "text": "x"} for i in range(201)]
+    assert client.post("/agents/a1/ingest", json={"documents": docs}).status_code == 422
