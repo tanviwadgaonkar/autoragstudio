@@ -52,8 +52,9 @@ def collection_name(agent_id: str) -> str:
     ``agent--<id>`` form (unchanged from v1, so existing indexes still load).
     Anything else — too long, uppercase, punctuation — gets a truncated
     readable prefix plus a hash of the *original* id. The hashed form contains
-    a ``.``, which a lossless name never can, so the two forms cannot collide,
-    and two different ids never share a collection.
+    a ``.``, which a lossless name never can, so the two forms cannot collide;
+    two hashed ids could only share a collection on a 64-bit hash collision
+    (about 1 in 10^19 per pair).
     """
     readable = f"agent--{agent_id}"
     if _LOSSLESS.fullmatch(agent_id) and len(readable) <= _MAX_NAME:

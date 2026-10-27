@@ -98,7 +98,7 @@ cd ../studio
 python manage.py test          # 9 Django tests (engine calls mocked)
 ```
 
-The engine suite covers **ingestion** (chunk sizing, overlap, deterministic and collision-free ids; embedding dimensionality and determinism), **re-indexing** (an edited document replaces its old chunks; a failed embedding leaves the previous version intact), **isolation** (collection naming is injective and always a valid Chroma name; agents never see each other's chunks), **persistence** (system prompts survive a restart), and **API behaviour** (404 unknown agent, 422 validation, 503 when the model backend is down). The Studio suite covers slug generation (non-Latin names, colliding names), malformed JSON, indexing status, and index cleanup on agent delete. Everything runs offline: a hashing embedder and an echo LLM stand in for Ollama. CI runs the engine suite against both store backends, the Studio suite, and a frontend build.
+The engine suite covers **ingestion** (chunk sizing, overlap, deterministic and collision-free ids; embedding dimensionality and determinism), **re-indexing** (an edited document replaces its old chunks; a failed embedding leaves the previous version intact), **isolation** (distinct agents get distinct collection names, always valid for Chroma; agents never see each other's chunks), **persistence** (system prompts survive a restart), and **API behaviour** (404 unknown agent, 422 validation, 503 when the model backend is down). The Studio suite covers slug generation (non-Latin names, colliding names), malformed JSON, indexing status, and index cleanup on agent delete. Everything runs offline: a hashing embedder and an echo LLM stand in for Ollama. CI runs the engine suite against both store backends, the Studio suite, and a frontend build.
 
 ## Engine API
 
@@ -121,7 +121,7 @@ Interactive docs at `http://localhost:8001/docs`.
 
 **Why offline test doubles?** CI should not depend on a 4 GB model download. The hashing embedder is deterministic bag-of-words — crude, but word overlap still produces meaningful cosine ordering, which is exactly enough to test the pipeline's plumbing end to end.
 
-**Why can't two agents share a collection?** Chroma collection names are capped at 63 characters. Slugs that fit keep the readable `agent--<slug>` name; anything longer (or not already a clean slug) becomes a truncated prefix plus a SHA-256 prefix of the full id, separated by a `.` — a character slugs never contain — so the mapping is injective. Before this, two long agent names that shared their first 56 characters silently shared one index.
+**Why can't two agents share a collection?** Chroma collection names are capped at 63 characters. Slugs that fit keep the readable `agent--<slug>` name; anything longer (or not already a clean slug) becomes a truncated prefix plus a SHA-256 prefix of the full id, separated by a `.` — a character slugs never contain — so a readable name can never equal a hashed one, and two hashed names collide only if 64-bit hash prefixes do (negligible, not impossible). Before this, two long agent names that shared their first 56 characters silently shared one index.
 
 **Why delete-then-upsert on re-ingest?** Chunk ids are `<title-slug>-<title-hash>::chunk-N`. Upserting a shorter edit would overwrite chunks 0..k and leave k+1..n from the old version retrievable. The engine embeds first, then deletes the title's old chunks, then writes — so an embedding failure never loses the previous version.
 
