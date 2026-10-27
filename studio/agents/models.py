@@ -3,12 +3,29 @@
 The studio is the source of truth for *what agents exist* and *what documents
 they own*. The engine is the source of truth for the vector index. The two
 are linked only by the agent slug, which the engine uses as its collection
-key — so deleting an agent here and calling the engine's DELETE endpoint
-fully removes it everywhere.
+key. Deleting an agent here also drops its engine index (see signals.py),
+so a new agent with the same name never inherits the old one's documents.
 """
+
+import uuid
 
 from django.db import models
 from django.utils.text import slugify
+
+
+def unique_slug_for(name: str, *, exclude_pk: int | None = None) -> str:
+    """A slug that is non-empty and unused.
+
+    ``slugify`` drops non-Latin text entirely ("कृषि सहायक" -> ""), and distinct
+    names can share a slug ("Foo Bar" / "foo-bar"), so fall back to a random
+    stem and de-duplicate with a numeric suffix.
+    """
+    base = slugify(name)[:120] or f"agent-{uuid.uuid4().hex[:8]}"
+    candidate, n = base, 2
+    others = Agent.objects.exclude(pk=exclude_pk) if exclude_pk else Agent.objects.all()
+    while others.filter(slug=candidate).exists():
+        candidate, n = f"{base}-{n}", n + 1
+    return candidate
 
 
 class Agent(models.Model):
@@ -26,7 +43,7 @@ class Agent(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.slug:
-            self.slug = slugify(self.name)
+            self.slug = unique_slug_for(self.name, exclude_pk=self.pk)
         super().save(*args, **kwargs)
 
     def __str__(self) -> str:

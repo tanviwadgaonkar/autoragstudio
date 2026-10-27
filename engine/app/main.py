@@ -14,7 +14,11 @@ Run:  uvicorn app.main:app --port 8001 --reload   (from engine/)
 
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException
+from typing import Annotated
+
+import httpx
+from fastapi import FastAPI, HTTPException, Path, Request
+from fastapi.responses import JSONResponse
 
 from .deps import get_pipeline
 from .rag.store import AgentIndexNotFound
@@ -29,7 +33,20 @@ from .schemas import (
     StatsResponse,
 )
 
-app = FastAPI(title="AutoRAG Studio Engine", version="1.0.0")
+app = FastAPI(title="AutoRAG Studio Engine", version="1.1.0")
+
+# Agent ids are Studio slugs; anything without an alphanumeric is rejected
+# with a 422 instead of failing deep inside the store.
+AgentId = Annotated[str, Path(min_length=1, max_length=200, pattern=r"[A-Za-z0-9]")]
+
+
+@app.exception_handler(httpx.HTTPError)
+async def model_backend_unavailable(request: Request, exc: httpx.HTTPError) -> JSONResponse:
+    """Ollama down or erroring is an upstream failure (503), not an engine bug (500)."""
+    return JSONResponse(
+        status_code=503,
+        content={"detail": f"model backend unavailable: {exc.__class__.__name__}: {exc}"},
+    )
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -43,7 +60,7 @@ def health() -> HealthResponse:
 
 
 @app.post("/agents/{agent_id}/ingest", response_model=IngestResponse)
-def ingest(agent_id: str, payload: IngestRequest) -> IngestResponse:
+def ingest(agent_id: AgentId, payload: IngestRequest) -> IngestResponse:
     pipe = get_pipeline()
     result = pipe.ingest(
         agent_id,
@@ -55,7 +72,7 @@ def ingest(agent_id: str, payload: IngestRequest) -> IngestResponse:
 
 
 @app.post("/agents/{agent_id}/query", response_model=QueryResponse)
-def query(agent_id: str, payload: QueryRequest) -> QueryResponse:
+def query(agent_id: AgentId, payload: QueryRequest) -> QueryResponse:
     pipe = get_pipeline()
     try:
         sources = pipe.retrieve(agent_id, payload.question, top_k=payload.top_k)
@@ -68,7 +85,7 @@ def query(agent_id: str, payload: QueryRequest) -> QueryResponse:
 
 
 @app.post("/agents/{agent_id}/chat", response_model=ChatResponse)
-def chat(agent_id: str, payload: QueryRequest) -> ChatResponse:
+def chat(agent_id: AgentId, payload: QueryRequest) -> ChatResponse:
     pipe = get_pipeline()
     try:
         result = pipe.answer(agent_id, payload.question, top_k=payload.top_k)
@@ -85,13 +102,13 @@ def chat(agent_id: str, payload: QueryRequest) -> ChatResponse:
 
 
 @app.get("/agents/{agent_id}/stats", response_model=StatsResponse)
-def stats(agent_id: str) -> StatsResponse:
+def stats(agent_id: AgentId) -> StatsResponse:
     pipe = get_pipeline()
     return StatsResponse(agent_id=agent_id, total_chunks=pipe.store.count(agent_id))
 
 
 @app.delete("/agents/{agent_id}/index")
-def delete_index(agent_id: str) -> dict:
+def delete_index(agent_id: AgentId) -> dict:
     pipe = get_pipeline()
-    deleted = pipe.store.delete_agent(agent_id)
+    deleted = pipe.delete_agent(agent_id)
     return {"agent_id": agent_id, "deleted": deleted}

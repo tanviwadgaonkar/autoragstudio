@@ -1,12 +1,14 @@
 """Word-window chunking with overlap — written from scratch, no framework.
 
 A chunk is a dict: {"id": str, "text": str, "metadata": {...}}.
-Chunk ids are deterministic (doc title + running index) so re-ingesting the
-same document produces the same ids and overwrites cleanly in the store.
+Chunk ids are deterministic (doc title + running index). The id carries a
+short hash of the exact title, so titles that slugify alike ("Q&A" / "Q A")
+never overwrite each other's chunks.
 """
 
 from __future__ import annotations
 
+import hashlib
 import re
 from typing import Iterable
 
@@ -41,6 +43,7 @@ def chunk_text(
         return []
 
     step = chunk_size - overlap
+    doc_key = f"{_slug(doc_title)}-{hashlib.sha256(doc_title.encode('utf-8')).hexdigest()[:8]}"
     chunks: list[dict] = []
     start = 0
     index = 0
@@ -48,7 +51,7 @@ def chunk_text(
         window = words[start : start + chunk_size]
         chunks.append(
             {
-                "id": f"{_slug(doc_title)}::chunk-{index}",
+                "id": f"{doc_key}::chunk-{index}",
                 "text": " ".join(window),
                 "metadata": {
                     "doc_title": doc_title,

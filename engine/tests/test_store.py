@@ -1,4 +1,4 @@
-"""Storage: per-agent ChromaDB collections (5 tests)."""
+"""Storage: per-agent ChromaDB collections."""
 
 import pytest
 
@@ -49,3 +49,20 @@ def test_query_unknown_agent_raises(store):
     [q] = EMB.embed(["anything"])
     with pytest.raises(AgentIndexNotFound):
         store.query("never-ingested", q)
+
+
+def test_long_agent_ids_do_not_share_a_collection(store):
+    # v1 truncated names to 63 chars, so these two agents shared one index.
+    base = "customer-support-knowledge-base-for-enterprise-clients-region-"
+    _index(store, base + "a", "cats purr and kittens chase yarn balls", "cats")
+    _index(store, base + "b", "compound interest grows dividend income", "fin")
+    [q] = EMB.embed(["cats purr"])
+    assert {h.metadata["doc_title"] for h in store.query(base + "b", q, top_k=5)} == {"fin"}
+
+
+def test_delete_document_removes_only_that_document(store, agent_id):
+    _index(store, agent_id, "cats purr and kittens chase yarn balls", "cats")
+    _index(store, agent_id, "compound interest grows dividend income", "fin")
+    assert store.delete_document(agent_id, "cats") >= 1
+    [q] = EMB.embed(["cats purr"])
+    assert {h.metadata["doc_title"] for h in store.query(agent_id, q, top_k=5)} == {"fin"}

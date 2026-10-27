@@ -21,6 +21,9 @@ export const createAgent = (name, systemPrompt) =>
     })
   );
 
+export const deleteAgent = (slug) =>
+  asJson(fetch(`/studio/api/agents/${slug}/`, { method: "DELETE" }));
+
 export const uploadDocument = (slug, title, text) =>
   asJson(
     fetch(`/studio/api/agents/${slug}/documents/`, {

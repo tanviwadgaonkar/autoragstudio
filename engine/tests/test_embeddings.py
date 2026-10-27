@@ -1,4 +1,4 @@
-"""Ingestion: embedding behaviour (3 tests)."""
+"""Ingestion: embedding behaviour."""
 
 from app.rag.embeddings import HashingEmbedder, cosine
 

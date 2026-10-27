@@ -1,4 +1,4 @@
-"""API behaviour: the FastAPI engine surface (6 tests)."""
+"""API behaviour: the FastAPI engine surface."""
 
 from .conftest import CAT_DOC, FINANCE_DOC
 
@@ -63,3 +63,40 @@ def test_agents_are_isolated_through_the_api(client):
     )
     titles = {s["metadata"]["doc_title"] for s in resp.json()["sources"]}
     assert titles == {"Finance"}
+
+
+def test_duplicate_titles_in_one_request_are_rejected(client, agent_id):
+    resp = _ingest(client, agent_id, [CAT_DOC, CAT_DOC])
+    assert resp.status_code == 422
+
+
+def test_agent_id_without_alphanumerics_is_rejected(client):
+    resp = client.post("/agents/---/query", json={"question": "anything"})
+    assert resp.status_code == 422
+
+
+def test_model_backend_down_returns_503(client, agent_id, monkeypatch):
+    import httpx
+
+    from app import deps
+
+    def boom(_texts):
+        raise httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr(deps.get_pipeline().embedder, "embed", boom)
+    resp = _ingest(client, agent_id, [CAT_DOC])
+    assert resp.status_code == 503
+    assert "model backend unavailable" in resp.json()["detail"]
+
+
+def test_delete_index_then_query_is_404(client, agent_id):
+    _ingest(client, agent_id, [CAT_DOC])
+    assert client.delete(f"/agents/{agent_id}/index").json()["deleted"] is True
+    assert client.post(f"/agents/{agent_id}/query", json={"question": "cats"}).status_code == 404
+
+
+def test_oversized_inputs_are_rejected(client):
+    too_long = "x" * 2_001
+    assert client.post("/agents/a1/query", json={"question": too_long}).status_code == 422
+    docs = [{"title": f"t{i}", "text": "x"} for i in range(201)]
+    assert client.post("/agents/a1/ingest", json={"documents": docs}).status_code == 422
