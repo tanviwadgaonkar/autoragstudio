@@ -4,6 +4,10 @@
 
 A multi-agent RAG platform that runs entirely on your machine. Create agents, give each one its own documents, and chat with them — every agent retrieves only from its own isolated ChromaDB vector store, and generation runs on locally hosted LLMs through [Ollama](https://ollama.com). The chunking → embedding → retrieval pipeline is written from scratch (no LangChain), so every step is inspectable and testable.
 
+![AutoRAG Studio: an agent answering from its own document, with the retrieved source and similarity score](docs/screenshot-chat.png)
+
+*A real run on a laptop CPU: the agent and document were created through this UI, the Studio pushed the document to the engine, and the answer came from a local `llama3.2:1b` via Ollama, grounded in the one retrieved chunk (cosine score 0.682). The engine used `RAG_STORE=memory` because ChromaDB needs a newer VC++ runtime on that machine. A 1B model paraphrases loosely ("same slug and index"), and larger models answer more precisely.*
+
 ## Architecture
 
 ```
@@ -87,8 +91,8 @@ Create an agent in the sidebar, paste a document, and ask it a question — the 
 ```bash
 cd engine
 pip install -r requirements-dev.txt
-pytest -q                      # 40 tests against in-memory ChromaDB
-RAG_STORE=memory pytest -q     # same 40 tests against the dependency-free store
+pytest -q                      # 44 tests against in-memory ChromaDB
+RAG_STORE=memory pytest -q     # same 44 tests against the dependency-free store
 
 cd ../studio
 python manage.py test          # 9 Django tests (engine calls mocked)
@@ -125,15 +129,19 @@ Interactive docs at `http://localhost:8001/docs`.
 
 **Security model.** This is a local, single-user tool: the Studio JSON API is CSRF-exempt and neither service has authentication. Don't expose them to a network as-is. `DJANGO_DEBUG=0` refuses to start without a real `DJANGO_SECRET_KEY`.
 
-**Environment variables** (engine): `RAG_STORE` = `chroma` | `memory` · `RAG_EMBEDDER` = `ollama` | `hash` · `RAG_LLM` = `ollama` | `echo` · `RAG_CHROMA` = `persistent` | `ephemeral` · `RAG_CHROMA_DIR` · `OLLAMA_URL` · `OLLAMA_EMBED_MODEL` · `OLLAMA_CHAT_MODEL`. Studio: `ENGINE_URL`, `DJANGO_SECRET_KEY`, `DJANGO_DEBUG`.
+**Environment variables** (engine): `RAG_STORE` = `chroma` | `memory` · `RAG_EMBEDDER` = `ollama` | `hash` · `RAG_LLM` = `ollama` | `echo` · `RAG_CHROMA` = `persistent` | `ephemeral` · `RAG_CHROMA_DIR` · `OLLAMA_URL` · `OLLAMA_EMBED_MODEL` · `OLLAMA_CHAT_MODEL` · `OLLAMA_CHAT_TIMEOUT` (s, default 120) · `OLLAMA_EMBED_TIMEOUT` (s, default 60). Studio: `ENGINE_URL`, `DJANGO_SECRET_KEY`, `DJANGO_DEBUG`.
 
 ## Project structure
 
 ```
-engine/    FastAPI service + the RAG core (app/rag: chunker, embeddings, store, llm, pipeline) + 40 tests
+engine/    FastAPI service + the RAG core (app/rag: chunker, embeddings, store, llm, pipeline) + 44 tests
 studio/    Django backend: agent registry, document store, admin, JSON API + 9 tests
 frontend/  React (Vite) UI: agent sidebar, document ingest, chat with sources
 ```
+
+## Deployment
+
+AutoRAG Studio is built to run **locally**: generation needs an Ollama server with a 1–8B model, which free hosting tiers can't run. There's no public demo. To run it on a single machine, follow *Quickstart*. Pick a chat model sized for the hardware (`llama3.2:1b` answered in about 15 s on a 4-core laptop CPU; `llama3.1` 8B took several minutes) and raise `OLLAMA_CHAT_TIMEOUT` for slow machines. A model that doesn't answer in time returns **503** with the reason, never a 500.
 
 ## Known limitations
 

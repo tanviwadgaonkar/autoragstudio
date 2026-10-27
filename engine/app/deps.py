@@ -27,6 +27,17 @@ def _env(name: str, default: str) -> str:
     return os.environ.get(name, default).strip().lower()
 
 
+def _seconds(name: str, default: float) -> float:
+    """A positive timeout from the environment; a bad value fails at start-up, not mid-request."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    value = float(raw)
+    if value <= 0:
+        raise ValueError(f"{name} must be a positive number of seconds, got {raw!r}")
+    return value
+
+
 @lru_cache(maxsize=1)
 def get_pipeline() -> RagPipeline:
     ollama_url = os.environ.get("OLLAMA_URL", "http://localhost:11434")
@@ -47,6 +58,7 @@ def get_pipeline() -> RagPipeline:
         embedder = OllamaEmbedder(
             base_url=ollama_url,
             model=os.environ.get("OLLAMA_EMBED_MODEL", "nomic-embed-text"),
+            timeout=_seconds("OLLAMA_EMBED_TIMEOUT", 60.0),
         )
 
     if _env("RAG_LLM", "ollama") == "echo":
@@ -55,6 +67,9 @@ def get_pipeline() -> RagPipeline:
         llm = OllamaLLM(
             base_url=ollama_url,
             model=os.environ.get("OLLAMA_CHAT_MODEL", "llama3.2"),
+            # Generation on CPU is slow (an 8B model can take minutes on a
+            # laptop), so this is configurable rather than a fixed 120 s.
+            timeout=_seconds("OLLAMA_CHAT_TIMEOUT", 120.0),
         )
 
     return RagPipeline(store=store, embedder=embedder, llm=llm, prompts=prompts)
