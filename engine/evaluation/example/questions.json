@@ -1,0 +1,8 @@
+[
+  {"id": "q01", "kind": "answerable", "question": "When does the fish market start selling?", "doc": "harbour-guide", "evidence": "half past six", "must_contain": ["half past six"]},
+  {"id": "q02", "kind": "answerable", "question": "How many bicycles can the ferry carry?", "doc": "harbour-guide", "evidence": "carries only six", "must_contain": ["six"]},
+  {"id": "q03", "kind": "answerable", "question": "Why are young children kept off the top gallery of the lighthouse?", "doc": "harbour-guide", "evidence": "spiral stairs are narrow and steep", "must_contain": ["stairs"]},
+  {"id": "q04", "kind": "unanswerable", "question": "How much does a ticket for the ferry cost?"},
+  {"id": "q05", "kind": "unanswerable", "question": "Who built the lighthouse?"},
+  {"id": "q06", "kind": "unanswerable", "question": "Is there a hotel at the harbour?"}
+]

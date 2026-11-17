@@ -63,10 +63,14 @@ Create an agent in the sidebar, paste a document, and ask it a question — the 
 
 ```bash
 cd engine
-pytest -q          # 22 passed
+pytest -q          # 46 passed
 ```
 
-The 22-test suite covers **ingestion** (chunk sizing, overlap, deterministic ids; embedding dimensionality and determinism), **retrieval** (per-agent isolation, ranking, top-k, metadata round-trips), and **API behaviour** (ingest/chat/stats endpoints, 404 on unknown agents, 422 validation, isolation through HTTP). Tests run fully offline in under a second: a deterministic hashing embedder and an echo LLM stand in for Ollama, and Chroma runs in-memory — the same interfaces, no network.
+The 22 core tests cover **ingestion** (chunk sizing, overlap, deterministic ids; embedding dimensionality and determinism), **retrieval** (per-agent isolation, ranking, top-k, metadata round-trips), and **API behaviour** (ingest/chat/stats endpoints, 404 on unknown agents, 422 validation, isolation through HTTP). Tests run fully offline in under a second: a deterministic hashing embedder and an echo LLM stand in for Ollama, and Chroma runs in-memory — the same interfaces, no network.
+
+## Evaluation
+
+`engine/evaluation/` is a small harness for measuring how reliably the engine answers questions about your own documents with the real local models: retrieval hit rate, an automatic answer check, and a manual grade you give yourself. See [engine/evaluation/README.md](engine/evaluation/README.md) to run it. Results from a real run are committed under `engine/evaluation/results/` and summarised here once they exist.
 
 ## Engine API
 
